@@ -44,7 +44,6 @@ export const COUNTRY_CODES: CountryInfo[] = [
   { code: 'NZ', name: 'New Zealand', nameThai: 'นิวซีแลนด์', dialCode: '+64', flag: '🇳🇿' },
 ];
 
-// Firebase Configuration from your console
 const firebaseConfig = {
   apiKey: "AIzaSyBt53YO2WEoKzRbGXZkqCcXKOEdNCaX4_k",
   authDomain: "kru-thai-english.firebaseapp.com",
@@ -55,12 +54,10 @@ const firebaseConfig = {
   measurementId: "G-2F5X3MXXH3"
 };
 
-// Initialize Firebase SDK Services
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// Register New User
 export async function registerFirebaseUser(params: {
   email: string;
   pass: string;
@@ -96,7 +93,6 @@ export async function registerFirebaseUser(params: {
   return userAccount;
 }
 
-// Login User
 export async function loginFirebaseUser(email: string, pass: string): Promise<UserAccount | null> {
   const userCred = await signInWithEmailAndPassword(auth, email, pass);
   const uid = userCred.user.uid;
@@ -108,7 +104,6 @@ export async function loginFirebaseUser(email: string, pass: string): Promise<Us
   return null;
 }
 
-// Logout User
 export function logoutFirebaseUser() {
   return signOut(auth);
 }
