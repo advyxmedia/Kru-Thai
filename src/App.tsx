@@ -17,12 +17,6 @@ import {
   saveProgress 
 } from './utils/storage';
 import { 
-  getActiveUser, 
-  setActiveUserId, 
-  getUserProgress, 
-  saveUserProgress 
-} from './utils/auth';
-import { 
   getInitialThemeMode, 
   applyThemeMode 
 } from './utils/theme';
@@ -38,27 +32,59 @@ import { TPRGame } from './components/TPRGame';
 import { TeacherConsole } from './components/TeacherConsole';
 import { AuthModal } from './components/AuthModal';
 
-export default function App() {
-  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => getActiveUser());
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authModalTab, setAuthModalTab] = useState<'profiles' | 'login'>('profiles');
-  const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
+// Firebase Imports
+import { auth, db } from './utils/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
-  const [progress, setProgress] = useState<UserProgress>(() => {
-    const active = getActiveUser();
-    return loadProgress(active ? active.id : 'user_somchai_35');
-  });
+export default function App() {
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalTab, setAuthModalTab] = useState<'profiles' | 'login'>('login');
+  const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  const [progress, setProgress] = useState<UserProgress>(() => loadProgress(''));
 
   const [currentView, setCurrentView] = useState<
     'roadmap' | 'lesson' | 'phonics_sandbox' | 'sentence_workshop' | 'vocab_explorer' | 'tpr_game' | 'teacher_console'
   >('roadmap');
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
 
+  // Sync state with Firebase Authentication
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as UserAccount;
+            setCurrentUser(userData);
+            const userProg = loadProgress(firebaseUser.uid);
+            setProgress(userProg);
+
+            if (userData.role === 'teacher') {
+              setCurrentView('teacher_console');
+              setProgress(p => ({ ...p, userMode: 'teacher' }));
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching Firestore user profile:", error);
+        }
+      } else {
+        setCurrentUser(null);
+        setProgress(loadProgress(''));
+      }
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // Apply theme whenever themeMode changes or interval ticks for day/night
   useEffect(() => {
     applyThemeMode(themeMode);
 
-    // Periodically re-check day/night if in 'auto' mode
     const interval = setInterval(() => {
       if (themeMode === 'auto') {
         applyThemeMode('auto');
@@ -68,18 +94,15 @@ export default function App() {
     return () => clearInterval(interval);
   }, [themeMode]);
 
-  // Sync progress changes to localStorage whenever progress changes
+  // Sync progress changes whenever progress changes
   useEffect(() => {
     if (progress && currentUser) {
       saveProgress(progress);
-      saveUserProgress(currentUser.id, progress);
     }
   }, [progress, currentUser]);
 
-  // Handle user login / switch
   const handleLoginSuccess = (user: UserAccount) => {
     setCurrentUser(user);
-    setActiveUserId(user.id);
     const userProg = loadProgress(user.id);
     setProgress(userProg);
     setIsAuthModalOpen(false);
@@ -95,30 +118,30 @@ export default function App() {
     }
   };
 
-  const handleSelectUser = (user: UserAccount) => {
-    handleLoginSuccess(user);
+  const handleLogout = async () => {
+    await signOut(auth);
+    setCurrentUser(null);
+    setProgress(loadProgress(''));
+    setCurrentView('roadmap');
   };
 
-  const openAuthModal = (tab: 'profiles' | 'login' = 'profiles') => {
+  const openAuthModal = (tab: 'profiles' | 'login' = 'login') => {
     setAuthModalTab(tab);
     setIsAuthModalOpen(true);
   };
 
-  // Handle lesson selection
   const handleSelectLesson = (lesson: Lesson) => {
     setActiveLesson(lesson);
     setCurrentView('lesson');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Handle lesson completion
   const handleCompleteLesson = (lessonId: string, earnedXp: number) => {
     setProgress((prev) => {
       const nextCompleted = prev.completedLessons.includes(lessonId)
         ? prev.completedLessons
         : [...prev.completedLessons, lessonId];
 
-      // Check if current level should advance
       let nextLevel = prev.currentLevel;
       const currentLevelData = CURRICULUM_LEVELS.find((l) => l.id === prev.currentLevel);
       if (currentLevelData) {
@@ -137,7 +160,6 @@ export default function App() {
     });
   };
 
-  // Find next lesson to proceed seamlessly
   const handleGoToNextLesson = () => {
     if (!activeLesson) return;
 
@@ -156,10 +178,18 @@ export default function App() {
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center font-sans">
+        <div className="animate-pulse text-lg font-semibold text-teal-400">Loading KruThai English...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans selection:bg-indigo-100 selection:text-indigo-900 transition-colors w-full max-w-full overflow-x-hidden">
       
-      {/* Top Application Navbar with Day/Night & User badge */}
+      {/* Top Application Navbar */}
       <Navbar
         userMode={progress.userMode}
         setUserMode={(mode) => setProgress((p) => ({ ...p, userMode: mode }))}
@@ -168,8 +198,9 @@ export default function App() {
         themeMode={themeMode}
         setThemeMode={setThemeMode}
         currentUser={currentUser}
-        onSelectUser={handleSelectUser}
+        onSelectUser={handleLoginSuccess}
         onOpenAuthModal={openAuthModal}
+        onLogout={handleLogout}
         currentView={currentView}
         setCurrentView={(view) => {
           setCurrentView(view);
@@ -179,7 +210,7 @@ export default function App() {
         xp={progress.xp}
       />
 
-      {/* Main View Router - with bottom padding on mobile/tablet for bottom nav bar */}
+      {/* Main View Router */}
       <main className="flex-1 pb-20 lg:pb-8 w-full max-w-full overflow-x-hidden">
         {currentView === 'roadmap' && (
           <CurriculumRoadmap
@@ -224,12 +255,12 @@ export default function App() {
             progress={progress}
             setProgress={setProgress}
             onSelectLesson={handleSelectLesson}
-            onSelectStudentProfile={handleSelectUser}
+            onSelectStudentProfile={handleLoginSuccess}
           />
         )}
       </main>
 
-      {/* Global Authentication Modal (Required on first use, switchable anytime) */}
+      {/* Global Authentication Modal */}
       {isAuthModalOpen && (
         <AuthModal
           currentUser={currentUser}
@@ -247,7 +278,7 @@ export default function App() {
             KruThai English · Local-First Bilingual Learning for Thai Beginners (Ages 5 - 70)
           </div>
           <div className="flex items-center gap-4 text-slate-400 dark:text-slate-400">
-            <span>Offline-First (No Server Required)</span>
+            <span>Powered by Firebase Auth</span>
             <span>·</span>
             <span>All Countries Phone / Email Login</span>
           </div>
