@@ -1,0 +1,6 @@
+{
+  "name": "KruThai English: Systematic English for Thai Beginners",
+  "description": "Classroom-ready local English learning web app for Thai beginners, systematically teaching sounds, letters, phonics, words, sentences, and grammar with bilingual Thai support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
