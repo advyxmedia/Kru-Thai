@@ -1,6 +1,6 @@
 import { UserProgress, ThaiSupportLevel, UserMode } from '../types';
 
-const STORAGE_KEY = 'kruthai_learning_progress_v1';
+const STORAGE_KEY = 'kruthai_learning_progress_v2'; // Bumped key version to bypass old cached storage
 
 export const INITIAL_PROGRESS: UserProgress = {
   userId: '',
@@ -12,10 +12,10 @@ export const INITIAL_PROGRESS: UserProgress = {
   masteredSentences: [],
   thaiSupport: 'beginner',
   userMode: 'student',
-  streakDays: 1, // Starts on Day 1 of login
+  streakDays: 1,
   lastActiveDate: new Date().toISOString().split('T')[0],
   clapsMastered: 0,
-  xp: 0, // Starts at 0 XP! Real XP is earned as lessons/exercises are completed!
+  xp: 0,
 };
 
 /**
@@ -33,7 +33,6 @@ export function calculateUserStreak(
     return { streak: Math.max(1, currentStreak || 1), lastDate: today };
   }
 
-  // Parse calendar day difference
   const lastParts = lastActiveDate.split('-').map(Number);
   const todayParts = today.split('-').map(Number);
   const lastUtc = Date.UTC(lastParts[0], lastParts[1] - 1, lastParts[2]);
@@ -41,10 +40,8 @@ export function calculateUserStreak(
   const diffDays = Math.round((todayUtc - lastUtc) / (1000 * 60 * 60 * 24));
 
   if (diffDays === 1) {
-    // Logged in the next consecutive day: increment streak
     return { streak: Math.max(1, (currentStreak || 0) + 1), lastDate: today };
   } else if (diffDays > 1) {
-    // Missed a day or more: streak resets to day 1 (today)
     return { streak: 1, lastDate: today };
   }
 
@@ -54,27 +51,20 @@ export function calculateUserStreak(
 export function loadProgress(userId: string = ''): UserProgress {
   if (typeof window === 'undefined') return { ...INITIAL_PROGRESS, userId };
   try {
-    const raw = localStorage.getItem(`kruthai_user_progress_${userId}`);
+    // Only load if a specific user ID is provided or check clean v2 storage key
+    const storageKey = userId ? `kruthai_user_progress_${userId}` : STORAGE_KEY;
+    const raw = localStorage.getItem(storageKey);
     let loaded: Partial<UserProgress> = {};
+
     if (raw) {
       loaded = JSON.parse(raw);
-    } else {
-      // Fallback check legacy storage key
-      const legacyRaw = localStorage.getItem(STORAGE_KEY);
-      if (legacyRaw) {
-        loaded = JSON.parse(legacyRaw);
-      }
     }
 
-    // Automatically check and update login streak
     const streakResult = calculateUserStreak(loaded.lastActiveDate, loaded.streakDays || 1);
-
-    // Ensure XP accurately reflects completed lessons (25 XP per completed lesson)
     const completedCount = Array.isArray(loaded.completedLessons) ? loaded.completedLessons.length : 0;
     let actualXp = typeof loaded.xp === 'number' ? loaded.xp : 0;
     
-    // Purge legacy hardcoded dummy 1250 or 50 XP if lessons are 0
-    if (completedCount === 0 && (actualXp === 1250 || actualXp === 50)) {
+    if (completedCount === 0) {
       actualXp = 0;
     } else if (actualXp < completedCount * 25) {
       actualXp = completedCount * 25;
@@ -89,7 +79,6 @@ export function loadProgress(userId: string = ''): UserProgress {
       xp: actualXp,
     };
 
-    saveProgress(finalProg);
     return finalProg;
   } catch (e) {
     console.error('Failed to load progress from localStorage', e);
@@ -100,10 +89,8 @@ export function loadProgress(userId: string = ''): UserProgress {
 export function saveProgress(progress: UserProgress): void {
   if (typeof window === 'undefined' || !progress) return;
   try {
-    const key = `kruthai_user_progress_${progress.userId || 'default'}`;
+    const key = progress.userId ? `kruthai_user_progress_${progress.userId}` : STORAGE_KEY;
     localStorage.setItem(key, JSON.stringify(progress));
-    // Also update legacy key for backward compatibility
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
   } catch (e) {
     console.error('Failed to save progress to localStorage', e);
   }
@@ -113,6 +100,7 @@ export function resetAllProgress(userId: string = ''): UserProgress {
   if (typeof window !== 'undefined') {
     try {
       localStorage.removeItem(`kruthai_user_progress_${userId}`);
+      localStorage.removeItem(STORAGE_KEY);
     } catch (e) {}
   }
   const clean: UserProgress = {
@@ -148,10 +136,10 @@ export function unlockAllForTeacher(userId: string = 'teacher_user'): UserProgre
     masteredSentences: ['I eat rice.', 'The dog runs.', 'She likes apples.'],
     thaiSupport: 'beginner',
     userMode: 'teacher',
-    streakDays: 1, // Real daily streak
+    streakDays: 1,
     lastActiveDate: new Date().toISOString().split('T')[0],
     clapsMastered: 12,
-    xp: allLessonIds.length * 25, // Accurate XP calculated from lessons
+    xp: allLessonIds.length * 25,
   };
 
   saveProgress(teacherProgress);
